@@ -1,0 +1,11 @@
+name: eda_beta
+channels:
+  - defaults
+dependencies:
+  - requests
+  - python=3.11
+  - numpy
+  - matplotlib
+  - pandas
+  - seaborn
+  - ipykernel
