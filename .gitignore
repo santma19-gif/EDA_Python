@@ -222,3 +222,6 @@ __marimo__/
 # Datos de SABIO-RK (licencia no comercial): se regeneran con el script de descarga 
 datos/crudos/*.csv
 datos/crudos/*.json
+
+# Configuración personal de VS Code
+.vscode/
