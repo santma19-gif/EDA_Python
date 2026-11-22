@@ -225,3 +225,14 @@ datos/crudos/*.json
 
 # Configuración personal de VS Code
 .vscode/
+# Datos de SABIO-RK (licencia no comercial): se regeneran con el script de descarga
+datos/crudos/*.csv
+datos/crudos/*.json
+
+# Configuración personal de VS Code
+.vscode/
+
+# Datos procesados (derivados de SABIO-RK): se regeneran con el script de limpieza
+datos/procesados/*.csv
+# Archivos del sistema de macOS
+.DS_Store

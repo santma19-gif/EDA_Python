@@ -330,4 +330,151 @@ print("Entradas con más de un sustrato (además del agua):",
 
 print(cinetica["antibiotico"].value_counts().to_string())
 
+# %% Paso B: unificar sinónimos y errores de escritura
+sinonimos = {"Benzylpenicillin": "Penicillin G",
+             "Phenoxymethylpenicillin": "Penicillin V",
+             "Cephaloridin": "Cephaloridine",
+             "Cefaloridine": "Cephaloridine",
+             "Ticaracillin": "Ticarcillin",
+             "Amoxycillin": "Amoxicillin",
+             "Cephazoline": "Cefazolin",
+             "6-Aminopenicillanate": "6-Aminopenicillanic acid",
+             }
+
+genericos = ["Cephalosporin", "beta-Lactam"]   # no dicen qué compuesto se midió
+
+antes = cinetica["antibiotico"].nunique()
+cinetica["antibiotico"] = cinetica["antibiotico"].replace(sinonimos)
+cinetica.loc[cinetica["antibiotico"].isin(genericos), "antibiotico"] = np.nan
+
+print(f"Nombres distintos: {antes} -> {cinetica['antibiotico'].nunique()}")
+cinetica["antibiotico"].value_counts().head(10)
+
+# %% Paso C: clase de antibiótico
+clases = {
+    "penicilina": ["Penicillin G", "Penicillin V", "Ampicillin", "Amoxicillin",
+                   "Piperacillin", "Carbenicillin", "Ticarcillin", "Oxacillin",
+                   "Cloxacillin", "Azlocillin", "Mezlocillin", "Methicillin",
+                   "Mecillinam", "Sulbenicillin", "Epicillin", "Temocillin",
+                   "Talampicillin"],
+    "cefalosporina": ["Cephalothin", "Cefotaxime", "Cephaloridine", "Cefuroxime",
+                      "Ceftazidime", "Cefoxitin", "Cefazolin", "Cephalexin",
+                      "Cefaclor", "Cefepime", "Cefdinir", "Cefamandole",
+                      "Cefpodoxime", "Cephapirin", "Ceftriaxone", "Cefsulodin",
+                      "Cefpirome", "Cefoperazone", "Cephradine", "Cephaloglycin",
+                      "Ceftizoxime", "Cefteram", "Cefixime", "Cefcapene",
+                      "Cefotiam", "Cefotetan", "Cefprozil", "Cefmetazole",
+                      "Cefadroxil", "Desacetyl cefotaxime",
+                      "Moxalactam",      # oxacefem: se agrupa con las cefalosporinas
+                      "Loracarbef"],     # carbacefem: se agrupa con las cefalosporinas
+    "carbapenemico": ["Imipenem", "Meropenem", "Biapenem", "Ertapenem",
+                      "Doripenem", "Panipenem", "Asparenomycin A"],
+    "monobactamico": ["Aztreonam", "Carumonam"],
+    "sustrato de laboratorio": ["Nitrocefin", "CENTA", "Bocillin FL",
+                                "Pyridine-2-azo-4-dimethylaniline cephalosporin"],
+    "inhibidor": ["Sulbactam", "Tazobactam", "Clavulanic acid", "BRL42715"],
+}
+
+# Invertir el diccionario: de {clase: [antibióticos]} a {antibiótico: clase}
+mapa_clases = {antibiotico: clase
+               for clase, lista in clases.items()
+               for antibiotico in lista}
+
+cinetica["clase_antibiotico"] = cinetica["antibiotico"].map(mapa_clases)
+
+# Lo que no está en ninguna lista (y no está vacío) pasa a "otros"
+sin_clase = cinetica["antibiotico"].notna() & cinetica["clase_antibiotico"].isna()
+print("Compuestos clasificados como 'otros':")
+print(sorted(cinetica.loc[sin_clase, "antibiotico"].unique()))
+cinetica.loc[sin_clase, "clase_antibiotico"] = "otros"
+
+cinetica["clase_antibiotico"].value_counts(dropna=False)
+
+# %% Paso D: lista de inhibidores
+print("Inhibidores distintos:", inhibicion["inhibidores"].nunique())
+print("Entradas sin inhibidor:", inhibicion["inhibidores"].isna().sum())
+print("Entradas con más de un inhibidor:",
+      inhibicion["inhibidores"].str.contains(r"\|", na=False).sum())
+
+print(inhibicion["inhibidores"].value_counts().to_string())
+
+# %% Paso D: tipo de inhibidor
+# 1. Recuperar el inhibidor desde especie_parametro (formato "1 | Nombre | Rol")
+especie_ki = (df[df["parametro"] == "Ki"]
+              .drop_duplicates("entrada")
+              .set_index("entrada")["especie_parametro"])
+
+sin_inhibidor = inhibicion["inhibidores"].isna()
+print("Sin inhibidor, antes:", sin_inhibidor.sum())
+print(especie_ki[inhibicion.loc[sin_inhibidor, "entrada"]].value_counts().to_string())
+
+# %% Paso D: tipo de inhibidor
+# 1. Excluir los Ki que no son de un inhibidor (del sustrato o del producto)
+filas_antes = len(inhibicion)
+inhibicion = inhibicion[inhibicion["inhibidores"].notna()]
+print(f"Entradas: {filas_antes} -> {len(inhibicion)}")
+
+# 2. Sinónimos
+sinonimos_inhibidores = {
+    "Clavulanate": "Clavulanic acid",
+    "Benzylpenicillin": "Penicillin G",
+    "Latamoxef": "Moxalactam",
+    "Sodium benzyl 2-benzoxazolone-5-acyl phosphonate":
+        "Sodium benzyl 2-benzoxazolone-5-acylphosphonate",
+}
+antes = inhibicion["inhibidores"].nunique()
+inhibicion["inhibidores"] = inhibicion["inhibidores"].replace(sinonimos_inhibidores)
+print(f"Inhibidores distintos: {antes} -> {inhibicion['inhibidores'].nunique()}")
+
+# 3. Clasificar
+clinicos = ["Clavulanic acid", "Sulbactam", "Tazobactam"]
+clases_clinicas = ["penicilina", "cefalosporina", "carbapenemico", "monobactamico"]
+betalactamicos = [ab for ab, clase in mapa_clases.items() if clase in clases_clinicas]
+betalactamicos.append("Cefmenoxime")   # cefalosporina que no estaba en el paso C
+
+def tipo_inhibidor(nombre):
+    if nombre in clinicos:
+        return "inhibidor clinico"
+    if nombre in betalactamicos:
+        return "antibiotico betalactamico"
+    return "experimental"
+
+inhibicion["tipo_inhibidor"] = inhibicion["inhibidores"].apply(tipo_inhibidor)
+inhibicion["tipo_inhibidor"].value_counts()
+
+# %% Paso E: tipo de enzima (metalo vs serina), a partir del cofactor y el UniProt
+# 1. Proteínas (UniProt) que tienen Zn en al menos una entrada, en cualquiera de las dos tablas
+todas = pd.concat([cinetica[["uniprot", "cofactor"]],
+                   inhibicion[["uniprot", "cofactor"]]])
+con_zinc = todas["cofactor"].str.contains("Zn", na=False)
+uniprot_metalo = set(todas.loc[con_zinc, "uniprot"].dropna())
+print("Proteínas con zinc:", sorted(uniprot_metalo))
+
+# 2. Clasificar cada entrada
+def tipo_betalactamasa(fila):
+    if "Zn" in str(fila["cofactor"]):
+        return "metalo (clase B)"
+    if fila["uniprot"] in uniprot_metalo:
+        return "metalo (clase B)"
+    if pd.notna(fila["uniprot"]):
+        return "serina (clases A, C, D)"
+    return "sin clasificar"
+
+cinetica["tipo_betalactamasa"] = cinetica.apply(tipo_betalactamasa, axis=1)
+inhibicion["tipo_betalactamasa"] = inhibicion.apply(tipo_betalactamasa, axis=1)
+
+print("\nCinética:")
+print(cinetica["tipo_betalactamasa"].value_counts())
+print("\nInhibición:")
+print(inhibicion["tipo_betalactamasa"].value_counts())
+
+# %% Exportar los UniProt distintos para consultarlos en UniProt
+ids = (pd.concat([cinetica["uniprot"], inhibicion["uniprot"]])
+       .dropna()
+       .str.split("|")
+       .explode()
+       .unique())
+
+print("Proteínas distintas:", len(ids))
+pd.Series(ids).to_csv("../datos/crudos/uniprot_ids.txt", index=False, header=False)
 # %%
