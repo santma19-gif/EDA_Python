@@ -478,3 +478,62 @@ ids = (pd.concat([cinetica["uniprot"], inhibicion["uniprot"]])
 print("Proteínas distintas:", len(ids))
 pd.Series(ids).to_csv("../datos/crudos/uniprot_ids.txt", index=False, header=False)
 # %%
+# %% Paso E: clase de enzima (A, B, C, D) según la familia en UniProt
+familias = pd.read_csv("../datos/crudos/idmapping_2026_11_22.tsv.gz", sep="\t")
+
+def clase_desde_familia(familia):
+    if pd.isna(familia):
+        return np.nan
+    for letra in ["A", "B", "C", "D"]:
+        if f"Class-{letra} beta-lactamase family" in familia:
+            return letra
+    return "otra enzima"
+
+familias["clase"] = familias["Protein families"].apply(clase_desde_familia)
+mapa_enzimas = dict(zip(familias["From"], familias["clase"]))
+
+# Correcciones a mano (ver justificación en la bitácora)
+mapa_enzimas.update({"Q9K578": "B",            # FEZ-1: metalo-β-lactamasa sin familia anotada
+                     "Q79F59": "B",            # eliminada de UniProt; tenía Zn en SABIO-RK
+                     "P29723": "otra enzima"}) # Tp47: carboxipeptidasa con actividad β-lactamasa
+
+def asignar_clase(tabla):
+    tabla = tabla.copy()
+    primer_id = tabla["uniprot"].str.split("|").str[0]
+    tabla["clase_enzima"] = primer_id.map(mapa_enzimas).fillna("sin clasificar")
+    return tabla.drop(columns="tipo_betalactamasa", errors="ignore")
+
+cinetica = asignar_clase(cinetica)
+inhibicion = asignar_clase(inhibicion)
+
+print("Cinética:")
+print(cinetica["clase_enzima"].value_counts())
+print("\nInhibición:")
+print(inhibicion["clase_enzima"].value_counts())
+# %%
+# %% Paso F: cierre
+# 1. Excluir "otra enzima": no son β-lactamasas de las clases A-D (incluye las humanas)
+for nombre, tabla in [("cinetica", cinetica), ("inhibicion", inhibicion)]:
+    print(f"{nombre}: {len(tabla)} -> {(tabla['clase_enzima'] != 'otra enzima').sum()}")
+
+cinetica = cinetica[cinetica["clase_enzima"] != "otra enzima"].copy()
+inhibicion = inhibicion[inhibicion["clase_enzima"] != "otra enzima"].copy()
+
+# 2. Valores imposibles: negativos y rangos de pH y temperatura
+print("\nValores negativos:")
+print((cinetica[["km", "kcat", "kcat_km"]] < 0).sum())
+print("Ki negativos:", (inhibicion["ki"] < 0).sum())
+print("\nRangos de condiciones:")
+print(cinetica[["ph", "temperatura"]].describe().loc[["min", "max"]])
+# Ceros en Ki: no son mediciones válidas
+print("Ceros en Ki:", (inhibicion["ki"] == 0).sum())
+inhibicion.loc[inhibicion["ki"] == 0, "ki"] = np.nan
+
+# 3. Guardar las tablas limpias
+cinetica.to_csv("../datos/procesados/cinetica.csv", index=False)
+inhibicion.to_csv("../datos/procesados/inhibicion.csv", index=False)
+
+print("\nTamaño final:")
+print("Cinética:", cinetica.shape)
+print("Inhibición:", inhibicion.shape)
+# %%
