@@ -4,8 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# %% Cargar datos
-df = pd.read_csv('../datos/crudos/sabio_betalactamasas_2026-11-19.csv',
+# %% Cargar datos (toma la descarga más reciente)
+from pathlib import Path
+
+archivos = sorted(Path("../datos/crudos").glob("sabio_betalactamasas_*.csv"))
+print("Usando:", archivos[-1].name)
+
+df = pd.read_csv(archivos[-1],
                  low_memory=False,
                  )
 print(df.shape)
